@@ -17,7 +17,7 @@ const PayloadDisplay: React.FC<PayloadDisplayProps> = ({ batch, onReset }) => {
     const [eh, em] = end.split(':').map(Number);
     let startTotal = sh * 60 + sm;
     let endTotal = eh * 60 + em;
-    // Gestione del turno che attraversa la mezzanotte
+    // Turno che attraversa la mezzanotte
     if (endTotal <= startTotal) endTotal += 24 * 60;
     return (endTotal - startTotal) / 60;
   };

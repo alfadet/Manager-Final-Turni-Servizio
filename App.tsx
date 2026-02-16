@@ -9,8 +9,7 @@ import {
 import { 
   DEFAULT_OPERATORS, 
   GDrive_FILE_ID,
-  getDriveUrl,
-  getProxyUrl
+  getDriveExportUrl
 } from './constants';
 import ServiceForm from './components/ServiceForm';
 import SummaryView from './components/SummaryView';
@@ -19,8 +18,8 @@ import SentHistory from './components/SentHistory';
 import OperatorStatsView from './components/OperatorStatsView';
 import VenueStatsView from './components/VenueStatsView';
 
-const STORAGE_KEY_OPS = 'alfa_security_operators_v6';
-const STORAGE_KEY_SENT = 'alfa_security_sent_history_v6';
+const STORAGE_KEY_OPS = 'alfa_security_operators_v6_2';
+const STORAGE_KEY_SENT = 'alfa_security_sent_history_v6_2';
 
 const App: React.FC = () => {
   const [masterOperators, setMasterOperators] = useState<Operator[]>(() => {
@@ -65,34 +64,48 @@ const App: React.FC = () => {
 
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * Sincronizzazione tramite Google Drive API v3.
+   * Elimina la necessità di proxy esterni e garantisce stabilità su Cloud Run.
+   */
   const syncFromCloud = async (silent = false) => {
     setIsSyncing(true);
     try {
-      const driveUrl = `${getDriveUrl(GDrive_FILE_ID)}&t=${Date.now()}`;
-      const proxyUrl = getProxyUrl(driveUrl);
-      const response = await fetch(proxyUrl);
-      if (!response.ok) throw new Error("Connessione fallita");
+      const driveUrl = getDriveExportUrl(GDrive_FILE_ID);
+      // Usiamo 'cors' mode e nessun proxy, le API Google supportano CORS con API Key
+      const response = await fetch(driveUrl, {
+        method: 'GET',
+        mode: 'cors'
+      });
+      
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error?.message || "Errore di accesso al documento");
+      }
+      
       const text = await response.text();
       
+      // Pulizia dei nomi: rimuove righe vuote e spazi superflui
       const names = text.split(/\r?\n/)
         .map(n => n.trim())
         .filter(n => n.length > 0 && !n.startsWith('<') && !n.includes('<!DOCTYPE'));
       
       if (names.length > 0) {
         const newOps: Operator[] = names.map((name, idx) => ({
-          operator_id: `AG-CLD-${idx}-${Date.now()}`,
+          operator_id: `AG-PLATINUM-${idx}-${Date.now()}`,
           operator_name: name
         }));
         
         setMasterOperators(newOps);
         setRawOpList("");
-        if (!silent) alert(`Sincronizzazione Platinum completata: ${newOps.length} agenti attivi.`);
+        if (!silent) alert(`Sincronizzazione Platinum completata. Database aggiornato: ${newOps.length} agenti attivi.`);
         return true;
+      } else {
+        throw new Error("Il documento sembra essere vuoto.");
       }
-      return false;
-    } catch (err) {
-      console.error("Errore Sync:", err);
-      if (!silent) alert("Errore critico durante la sincronizzazione cloud.");
+    } catch (err: any) {
+      console.error("Errore Sync Cloud:", err);
+      if (!silent) alert(`Errore Sincronizzazione: ${err.message || "Impossibile connettersi a Google Drive"}`);
       return false;
     } finally {
       setIsSyncing(false);
@@ -100,6 +113,7 @@ const App: React.FC = () => {
   };
 
   const startNewBatch = async () => {
+    // Tentativo di sync automatico all'avvio di una nuova sessione
     await syncFromCloud(true);
     setBatch({
       batch_id: `PROT-${Date.now()}`,
@@ -156,7 +170,7 @@ const App: React.FC = () => {
           </div>
           <div>
             <h1 className="text-xl font-black tracking-tighter uppercase italic text-white leading-none">Alfa Security</h1>
-            <p className="text-[9px] text-amber-500 font-mono uppercase tracking-[0.4em] font-bold opacity-80 mt-1">PLATINUM OPS V6</p>
+            <p className="text-[9px] text-amber-500 font-mono uppercase tracking-[0.4em] font-bold opacity-80 mt-1">PLATINUM OPS V6.2</p>
           </div>
         </div>
         {appState !== AppState.IDLE && (
@@ -171,47 +185,36 @@ const App: React.FC = () => {
               <div className="p-8">
                 <div className="flex justify-between items-start mb-10">
                   <div>
-                    <h2 className="text-amber-500 text-[9px] font-black uppercase tracking-[0.5em] mb-1 opacity-70 italic">Operazioni</h2>
-                    <h3 className="text-3xl font-black text-white italic tracking-tight uppercase">Console</h3>
+                    <h2 className="text-amber-500 text-[9px] font-black uppercase tracking-[0.5em] mb-1 opacity-70 italic">Protocollo</h2>
+                    <h3 className="text-3xl font-black text-white italic tracking-tight uppercase">Dashboard</h3>
                   </div>
                   <div className="px-4 py-2 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 backdrop-blur-xl animate-pulse">
-                    <span className="text-[8px] font-black text-emerald-400 uppercase tracking-widest">Live Status</span>
+                    <span className="text-[8px] font-black text-emerald-400 uppercase tracking-widest">Live Sync</span>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <button onClick={() => setShowOpManager(!showOpManager)} className={`py-8 rounded-[2rem] border transition-all duration-300 backdrop-blur-2xl flex flex-col items-center gap-3 active:scale-95 ${showOpManager ? 'bg-amber-600/30 border-amber-500/40 text-white shadow-2xl' : 'bg-white/5 border-white/5 text-slate-400 active:bg-emerald-500 active:text-black active:shadow-[0_0_40px_#10b981]'}`}>
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-                    <span className="text-[10px] font-black uppercase tracking-widest">Anagrafica Staff</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest italic">Database Staff</span>
                   </button>
                   <button onClick={() => setAppState(AppState.VIEWING_SENT_BATCHES)} className="py-8 rounded-[2rem] bg-white/5 border border-white/5 text-slate-400 flex flex-col items-center gap-3 transition-all duration-300 backdrop-blur-2xl active:scale-95 active:bg-emerald-500 active:text-black active:shadow-[0_0_40px_#10b981]">
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-                    <span className="text-[10px] font-black uppercase tracking-widest">Registro Invii</span>
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 mb-10">
-                  <button onClick={() => setAppState(AppState.VIEWING_OPERATOR_STATS)} className="py-8 rounded-[2rem] bg-white/5 border border-white/5 text-slate-400 flex flex-col items-center gap-3 transition-all duration-300 backdrop-blur-2xl active:scale-95 active:bg-emerald-500 active:text-black active:shadow-[0_0_40px_#10b981]">
-                    <svg className="w-6 h-6 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-                    <span className="text-[11px] font-black uppercase tracking-widest italic">Ore Staff</span>
-                  </button>
-                  <button onClick={() => setAppState(AppState.VIEWING_VENUE_STATS)} className="py-8 rounded-[2rem] bg-white/5 border border-white/5 text-slate-400 flex flex-col items-center gap-3 transition-all duration-300 backdrop-blur-2xl active:scale-95 active:bg-emerald-500 active:text-black active:shadow-[0_0_40px_#10b981]">
-                    <svg className="w-6 h-6 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
-                    <span className="text-[11px] font-black uppercase tracking-widest italic">Analisi Siti</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest italic">Registro Invii</span>
                   </button>
                 </div>
 
                 {showOpManager && (
                   <div className="mb-8 p-6 backdrop-blur-3xl bg-black/60 rounded-[2.5rem] border border-white/10 animate-in slide-in-from-top-4 duration-500 shadow-inner">
                     <div className="flex justify-between items-center mb-5">
-                      <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest italic">Gestione Database Staff</span>
-                      <button onClick={() => syncFromCloud()} disabled={isSyncing} className={`text-[9px] px-5 py-2.5 rounded-2xl font-black uppercase transition-all ${isSyncing ? 'bg-slate-800 text-slate-500' : 'bg-amber-500 text-black active:scale-95 active:shadow-[0_0_20px_#fbbf24]'}`}>
-                        {isSyncing ? 'Sync...' : 'Aggiorna'}
+                      <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest italic">Gestione Diretta Staff</span>
+                      <button onClick={() => syncFromCloud()} disabled={isSyncing} className={`text-[9px] px-5 py-2.5 rounded-2xl font-black uppercase transition-all ${isSyncing ? 'bg-slate-800 text-slate-500' : 'bg-emerald-500 text-black active:scale-95 active:shadow-[0_0_20px_#10b981]'}`}>
+                        {isSyncing ? 'Loading...' : 'Cloud Sync'}
                       </button>
                     </div>
                     <textarea 
                       className="w-full bg-black/40 border border-white/5 rounded-3xl p-5 text-xs font-mono h-32 text-amber-100/80 focus:outline-none focus:border-amber-500/30 custom-scrollbar shadow-inner mb-4" 
-                      placeholder="Nomi operatori, uno per riga..."
+                      placeholder="Agente 1&#10;Agente 2..."
                       value={rawOpList || masterOperators.map(o => o.operator_name).join('\n')} 
                       onChange={(e) => setRawOpList(e.target.value)}
                     />
@@ -222,16 +225,27 @@ const App: React.FC = () => {
                       setSaveSuccess(true);
                       setTimeout(() => setSaveSuccess(false), 2000);
                     }} className={`w-full py-5 text-[11px] font-black rounded-2xl uppercase tracking-[0.2em] shadow-2xl transition-all active:scale-95 ${saveSuccess ? 'bg-emerald-600 text-white' : 'bg-white text-black active:shadow-[0_0_30px_#10b981]'}`}>
-                      {saveSuccess ? '✓ DATABASE AGGIORNATO' : 'SALVA MODIFICHE'}
+                      {saveSuccess ? '✓ MEMORIZZATO' : 'SALVA MODIFICHE LOCALI'}
                     </button>
                   </div>
                 )}
+
+                <div className="grid grid-cols-2 gap-4 mb-10">
+                  <button onClick={() => setAppState(AppState.VIEWING_OPERATOR_STATS)} className="py-8 rounded-[2rem] bg-white/5 border border-white/5 text-slate-400 flex flex-col items-center gap-3 transition-all duration-300 backdrop-blur-2xl active:scale-95 active:bg-emerald-500 active:text-black active:shadow-[0_0_40px_#10b981]">
+                    <svg className="w-6 h-6 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                    <span className="text-[11px] font-black uppercase tracking-widest italic">Stat. Agenti</span>
+                  </button>
+                  <button onClick={() => setAppState(AppState.VIEWING_VENUE_STATS)} className="py-8 rounded-[2rem] bg-white/5 border border-white/5 text-slate-400 flex flex-col items-center gap-3 transition-all duration-300 backdrop-blur-2xl active:scale-95 active:bg-emerald-500 active:text-black active:shadow-[0_0_40px_#10b981]">
+                    <svg className="w-6 h-6 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+                    <span className="text-[11px] font-black uppercase tracking-widest italic">Analisi Siti</span>
+                  </button>
+                </div>
 
                 <button onClick={startNewBatch} disabled={isSyncing} className="w-full py-7 bg-emerald-500 text-white font-black rounded-[2.5rem] text-sm uppercase tracking-[0.4em] shadow-[0_20px_40px_rgba(16,185,129,0.5)] transition-all duration-300 active:scale-95 active:shadow-[0_0_70px_#10b981] flex items-center justify-center gap-4">
                   <svg className={`w-7 h-7 ${isSyncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeWidth={3} d="M12 4v16m8-8H4" />
                   </svg>
-                  Inizia Nuova Sessione
+                  {isSyncing ? 'Sincronizzazione...' : 'Nuova Commessa'}
                 </button>
               </div>
             </div>
@@ -294,7 +308,7 @@ const App: React.FC = () => {
       </main>
 
       <footer className="mt-auto py-8 text-[9px] text-white/20 font-mono text-center uppercase tracking-[0.5em] pb-[env(safe-area-inset-bottom)]">
-        ALFA SECURITY SYSTEMS • PROTOCOLLO PLATINUM V6.1
+        ALFA SECURITY SYSTEMS • PROTOCOLLO PLATINUM V6.2
       </footer>
     </div>
   );
