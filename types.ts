@@ -4,6 +4,11 @@ export interface Operator {
   operator_name: string;
 }
 
+export interface Venue {
+  venue_id: string;
+  venue_name: string;
+}
+
 export interface ServiceEntry {
   id: number;
   venue_name: string;
@@ -29,27 +34,27 @@ export enum AppState {
   SENT = 'SENT',
   VIEWING_SENT_BATCHES = 'VIEWING_SENT_BATCHES',
   VIEWING_OPERATOR_STATS = 'VIEWING_OPERATOR_STATS',
-  VIEWING_VENUE_STATS = 'VIEWING_VENUE_STATS'
+  VIEWING_VENUE_STATS = 'VIEWING_VENUE_STATS',
+  VIEWING_ADVANCED_LOGS = 'VIEWING_ADVANCED_LOGS'
 }
 
 /**
- * Statistics for an operator within a specific month.
+ * Interfaces to support the legacy MonthlyReport component
  */
 export interface OperatorMonthlyStat {
-  serviceCount: number;
   totalHours: number;
+  serviceCount: number;
 }
 
-/**
- * Statistics for a venue within a specific month.
- */
 export interface VenueMonthlyStat {
   operatorServiceCount: number;
 }
 
+export interface MonthlyData {
+  operators: Record<string, OperatorMonthlyStat>;
+  venues: Record<string, VenueMonthlyStat>;
+}
+
 export interface HistoricalStats {
-  months: Record<string, {
-    operators: Record<string, OperatorMonthlyStat>;
-    venues: Record<string, VenueMonthlyStat>;
-  }>;
+  months: Record<string, MonthlyData>;
 }
