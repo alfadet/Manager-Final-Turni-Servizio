@@ -11,7 +11,7 @@ interface SummaryViewProps {
 
 const SummaryView: React.FC<SummaryViewProps> = ({ batch, isSyncing, onConfirm, onCancel }) => {
   return (
-    <div className="space-y-6 animate-in slide-in-from-bottom duration-500">
+    <div className="space-y-6 animate-in slide-in-from-bottom duration-500 pb-10">
       <div className="backdrop-blur-3xl bg-white/5 p-8 rounded-[3.5rem] border border-white/10 shadow-[0_40px_80px_rgba(0,0,0,0.7)] border-t-white/10">
         <h2 className="text-2xl font-black text-white italic uppercase tracking-tighter mb-8 border-b border-white/5 pb-6">Riepilogo Operativo</h2>
 
@@ -22,17 +22,26 @@ const SummaryView: React.FC<SummaryViewProps> = ({ batch, isSyncing, onConfirm, 
               <h3 className="font-black text-amber-500 uppercase tracking-[0.4em] text-[9px] mb-4 opacity-70 italic">COMMESSA #{s.id}</h3>
               <div className="space-y-3">
                 <div className="flex justify-between items-baseline">
-                  <span className="text-[9px] font-black text-white/20 uppercase tracking-widest">LOCALE</span>
-                  <span className="text-sm font-black text-white uppercase italic tracking-tight">{s.venue_name}</span>
+                  <span className="text-[9px] font-black text-white/20 uppercase tracking-widest">SITO</span>
+                  <div className="text-right">
+                    <span className="block text-sm font-black text-white uppercase italic tracking-tight">{s.venue_name}</span>
+                    <span className="block text-[10px] font-black text-emerald-400 uppercase tracking-widest mt-0.5">{s.location}</span>
+                  </div>
                 </div>
                 <div className="flex justify-between items-baseline">
                   <span className="text-[9px] font-black text-white/20 uppercase tracking-widest">PIANIFICAZIONE</span>
-                  <span className="text-sm font-mono text-amber-300">{s.start_time} - {s.end_time}</span>
+                  <span className="text-sm font-mono text-amber-300 italic">{s.start_time} - {s.end_time}</span>
                 </div>
                 <div className="pt-3 border-t border-white/5">
                   <p className="text-[9px] font-black text-white/20 uppercase tracking-widest mb-2">OPERATORI ASSEGNATI</p>
                   <p className="text-[11px] font-bold text-white/90 leading-relaxed italic">{s.operators.map(o => o.operator_name).join(', ')}</p>
                 </div>
+                {s.notes && (
+                  <div className="pt-3 border-t border-white/5">
+                    <p className="text-[9px] font-black text-white/20 uppercase tracking-widest mb-2">NOTE SERVIZIO</p>
+                    <p className="text-[10px] font-bold text-amber-100/60 leading-relaxed italic uppercase">{s.notes}</p>
+                  </div>
+                )}
               </div>
             </div>
           ))}

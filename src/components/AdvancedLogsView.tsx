@@ -88,6 +88,15 @@ const AdvancedLogsView: React.FC<AdvancedLogsViewProps> = ({ history, onBack }) 
     alert('Report copiato negli appunti!');
   };
 
+  const downloadLogTxt = () => {
+    const blob = new Blob([reportTxt], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `LOG_ALFA_AVANZATO_${filterMonth}_${filterYear}.txt`;
+    link.click();
+  };
+
   return (
     <div className="space-y-6 animate-in zoom-in duration-500">
       <div className="backdrop-blur-3xl bg-white/5 p-8 rounded-[3.5rem] border border-white/10 shadow-[0_40px_80px_rgba(0,0,0,0.7)]">
@@ -138,7 +147,10 @@ const AdvancedLogsView: React.FC<AdvancedLogsViewProps> = ({ history, onBack }) 
             <button onClick={exportEmail} className="py-5 bg-white text-black font-black rounded-2xl text-[10px] uppercase tracking-widest active:scale-95 transition-all">Email Log</button>
             <button onClick={exportWA} className="py-5 bg-emerald-500 text-white font-black rounded-2xl text-[10px] uppercase tracking-widest active:scale-95 transition-all">WhatsApp</button>
           </div>
-          <button onClick={copyToClipboard} className="w-full py-5 bg-amber-500 text-black font-black rounded-2xl text-[10px] uppercase tracking-[0.3em] active:scale-95 transition-all">Copia per Excel / Incolla</button>
+          <div className="grid grid-cols-2 gap-4">
+            <button onClick={copyToClipboard} className="py-5 bg-amber-500 text-black font-black rounded-2xl text-[10px] uppercase tracking-widest active:scale-95 transition-all">Copia Dati</button>
+            <button onClick={downloadLogTxt} className="py-5 bg-zinc-800 text-white font-black rounded-2xl text-[10px] uppercase tracking-widest border border-white/10 active:scale-95 transition-all">Scarica .TXT</button>
+          </div>
         </div>
       </div>
 

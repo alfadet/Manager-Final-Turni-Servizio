@@ -16,6 +16,9 @@ import SummaryView from './components/SummaryView';
 import PayloadDisplay from './components/PayloadDisplay';
 import SentHistory from './components/SentHistory';
 import AdvancedLogsView from './components/AdvancedLogsView';
+import OperatorStatsView from './components/OperatorStatsView';
+import VenueStatsView from './components/VenueStatsView';
+import UtilityModal from './components/UtilityModal';
 
 const DB_KEY_OPS = 'ALFA_DB_OPERATORS_V7';
 const DB_KEY_VENUES = 'ALFA_DB_VENUES_V7';
@@ -40,14 +43,21 @@ const App: React.FC = () => {
   const [sentBatches, setSentBatches] = useState<Batch[]>(() => {
     try {
       const saved = localStorage.getItem(DB_KEY_HISTORY);
-      return saved ? JSON.parse(saved) : [];
+      const parsed: Batch[] = saved ? JSON.parse(saved) : [];
+      // Migrazione: Assicura che ogni servizio abbia un service_uuid
+      return parsed.map(batch => ({
+        ...batch,
+        services: batch.services.map(s => ({
+          ...s,
+          service_uuid: s.service_uuid || `SRV-MIG-${s.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        }))
+      }));
     } catch { return []; }
   });
 
   const [showInstallOverlay, setShowInstallOverlay] = useState(false);
 
   useEffect(() => {
-    // Verifica se l'app è già in modalità standalone (installata)
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches 
                          || (window.navigator as any).standalone 
                          || document.referrer.includes('android-app://');
@@ -81,7 +91,9 @@ const App: React.FC = () => {
   const [showVenueManager, setShowVenueManager] = useState(false);
   const [newOpName, setNewOpName] = useState("");
   const [newVenueName, setNewVenueName] = useState("");
+  const [newVenueLocation, setNewVenueLocation] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
+  const [showUtility, setShowUtility] = useState(false);
 
   const [batch, setBatch] = useState<Batch>({
     batch_id: `PROT-${Date.now()}`,
@@ -90,10 +102,17 @@ const App: React.FC = () => {
   });
 
   const [currentService, setCurrentService] = useState<ServiceEntry>({
-    id: 1, venue_name: '', location: '', service_date: '', start_time: '', end_time: '', notes: '', operators: [], double_shift: false
+    id: 1, service_uuid: `SRV-${Date.now()}`, venue_name: '', location: '', service_date: '', start_time: '', end_time: '', notes: '', operators: [], double_shift: false
   });
 
   const [error, setError] = useState<string | null>(null);
+
+  // Calcolo totale operatori inviati (Unità Dispiegate)
+  const totalDeployments = useMemo(() => {
+    return sentBatches.reduce((acc, b) => {
+      return acc + b.services.reduce((sAcc, s) => sAcc + s.operators.length, 0);
+    }, 0);
+  }, [sentBatches]);
 
   const syncToCloud = async (data: Batch) => {
     if (GOOGLE_APPS_SCRIPT_URL === 'URL_WEBAPP') return;
@@ -147,9 +166,14 @@ const App: React.FC = () => {
   };
 
   const addVenue = () => {
-    if (!newVenueName.trim()) return;
-    setMasterVenues([...masterVenues, { venue_id: `VN-${Date.now()}`, venue_name: newVenueName.trim() }]);
+    if (!newVenueName.trim() || !newVenueLocation.trim()) return;
+    setMasterVenues([...masterVenues, { 
+      venue_id: `VN-${Date.now()}`, 
+      venue_name: newVenueName.trim(), 
+      venue_location: newVenueLocation.trim() 
+    }]);
     setNewVenueName("");
+    setNewVenueLocation("");
   };
 
   const handleGoHome = () => {
@@ -174,10 +198,50 @@ const App: React.FC = () => {
     });
   }, [masterOperators, batch.services, currentService.service_date, currentService.double_shift, currentService.operators]);
 
+  const last8Services = useMemo(() => {
+    const all: ServiceEntry[] = [];
+    sentBatches.forEach(b => {
+      b.services.forEach(s => {
+        all.push({ ...s });
+      });
+    });
+    return all.slice(0, 8);
+  }, [sentBatches]);
+
+  const handleUpdateServiceInHistory = (updatedService: ServiceEntry) => {
+    setSentBatches(prev => prev.map(batch => ({
+      ...batch,
+      services: batch.services.map(s => s.service_uuid === updatedService.service_uuid ? updatedService : s)
+    })));
+  };
+
+  const handleDownloadLog = (specificService?: ServiceEntry) => {
+    const timestamp = new Date().toLocaleString('it-IT');
+    let logContent = `ALFA SECURITY - LOG OPERATIVO\nDATA GENERAZIONE: ${timestamp}\n\n`;
+    
+    const servicesToLog = specificService ? [specificService] : last8Services;
+    
+    servicesToLog.forEach(s => {
+      logContent += `[SERVIZIO #${s.id}]\n`;
+      logContent += `LOCALE: ${s.venue_name} (${s.location})\n`;
+      logContent += `DATA: ${s.service_date}\n`;
+      logContent += `ORARIO: ${s.start_time} - ${s.end_time}\n`;
+      logContent += `OPERATORI: ${s.operators.map(o => o.operator_name).join(', ')}\n`;
+      logContent += `NOTE: ${s.notes || 'N/A'}\n`;
+      logContent += `------------------------------------\n`;
+    });
+
+    const blob = new Blob([logContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `LOG_ALFA_SECURITY_${new Date().getTime()}.txt`;
+    link.click();
+  };
+
   return (
     <div className="min-h-[100dvh] bg-[#020202] text-white selection:bg-emerald-500/40 flex flex-col items-center p-4 overflow-x-hidden font-sans antialiased overflow-y-auto custom-scrollbar relative">
       
-      {/* Install Overlay (PWA Prompt) */}
       {showInstallOverlay && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-2xl bg-black/80 animate-in fade-in duration-500">
           <div className="w-full max-w-[380px] bg-zinc-900/50 border border-white/10 rounded-[3.5rem] p-10 shadow-[0_50px_100px_rgba(0,0,0,0.9)] flex flex-col items-center text-center relative overflow-hidden">
@@ -208,7 +272,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Background FX */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10 bg-black">
         <div className="absolute top-[-5%] left-[10%] w-[60%] h-[60%] bg-amber-600/10 blur-[120px] rounded-full animate-pulse"></div>
         <div className="absolute bottom-[-10%] right-[10%] w-[70%] h-[70%] bg-emerald-600/10 blur-[130px] rounded-full animate-pulse" style={{ animationDuration: '7s' }}></div>
@@ -233,7 +296,7 @@ const App: React.FC = () => {
         {appState === AppState.IDLE && (
           <div className="space-y-6 animate-in zoom-in duration-500">
             <div className="relative backdrop-blur-3xl bg-white/5 border border-white/10 rounded-[3rem] shadow-[0_40px_80px_rgba(0,0,0,0.7)] p-8">
-              <div className="flex justify-between items-start mb-10">
+              <div className="flex justify-between items-start mb-8">
                 <div>
                   <h2 className="text-amber-500 text-[9px] font-black uppercase tracking-[0.5em] mb-1 italic">Gestore</h2>
                   <h3 className="text-3xl font-black text-white italic uppercase tracking-tight">Dashboard</h3>
@@ -241,9 +304,23 @@ const App: React.FC = () => {
                 <div className="flex flex-col gap-2">
                   <button onClick={handleExportDB} className="text-[8px] px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-emerald-400 font-black uppercase active:bg-emerald-500 active:text-black">Backup</button>
                   <label className="text-[8px] px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-400 font-black uppercase cursor-pointer active:bg-amber-500 active:text-black text-center">
-                    Import
+                    Importa
                     <input type="file" onChange={handleImportDB} className="hidden" />
                   </label>
+                </div>
+              </div>
+
+              {/* Statistica Totale Operatori Inviati */}
+              <div className="mb-6 p-6 rounded-[2.5rem] bg-gradient-to-br from-emerald-500/20 to-emerald-900/10 border border-emerald-500/30 shadow-[0_15px_30px_rgba(16,185,129,0.15)] relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-4 opacity-10">
+                   <svg className="w-16 h-16 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                </div>
+                <div className="relative z-10">
+                  <p className="text-[10px] font-black text-emerald-400 uppercase tracking-[0.4em] mb-1 italic">Volume Operativo Totale</p>
+                  <div className="flex items-baseline gap-3">
+                    <span className="text-4xl font-black text-white italic tracking-tighter">{totalDeployments}</span>
+                    <span className="text-[11px] font-bold text-white/40 uppercase tracking-widest">Unità Dispiegate</span>
+                  </div>
                 </div>
               </div>
 
@@ -251,7 +328,7 @@ const App: React.FC = () => {
                 <button onClick={() => {setShowOpManager(!showOpManager); setShowVenueManager(false);}} className={`relative py-8 rounded-[2rem] border transition-all duration-300 backdrop-blur-2xl flex flex-col items-center gap-3 ${showOpManager ? 'bg-amber-600/30 border-amber-500/40 text-white' : 'bg-white/5 border-white/5 text-slate-400'}`}>
                   <div className="absolute top-4 right-4 bg-amber-500 text-black text-[10px] font-black w-6 h-6 rounded-lg flex items-center justify-center shadow-lg">{masterOperators.length}</div>
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-                  <span className="text-[10px] font-black uppercase tracking-widest italic">Staff</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest italic">Agenti</span>
                 </button>
                 <button onClick={() => {setShowVenueManager(!showVenueManager); setShowOpManager(false);}} className={`relative py-8 rounded-[2rem] border transition-all duration-300 backdrop-blur-2xl flex flex-col items-center gap-3 ${showVenueManager ? 'bg-emerald-600/30 border-emerald-500/40 text-white' : 'bg-white/5 border-white/5 text-slate-400'}`}>
                   <div className="absolute top-4 right-4 bg-emerald-500 text-black text-[10px] font-black w-6 h-6 rounded-lg flex items-center justify-center shadow-lg">{masterVenues.length}</div>
@@ -279,14 +356,20 @@ const App: React.FC = () => {
 
               {showVenueManager && (
                 <div className="mb-6 p-6 backdrop-blur-3xl bg-black/60 rounded-[2.5rem] border border-white/10 animate-in slide-in-from-top duration-300">
-                  <div className="flex gap-2 mb-6">
-                    <input type="text" value={newVenueName} onChange={(e) => setNewVenueName(e.target.value)} placeholder="Nome Locale..." className="flex-1 bg-black/40 border border-white/5 rounded-2xl px-5 py-3 text-xs text-white uppercase font-bold" />
-                    <button onClick={addVenue} className="bg-emerald-500 text-black font-black px-5 rounded-2xl text-[10px]">+</button>
+                  <div className="space-y-2 mb-6">
+                    <input type="text" value={newVenueName} onChange={(e) => setNewVenueName(e.target.value)} placeholder="Nome Locale (es. Club X)..." className="w-full bg-black/40 border border-white/5 rounded-2xl px-5 py-3 text-xs text-white uppercase font-bold" />
+                    <div className="flex gap-2">
+                      <input type="text" value={newVenueLocation} onChange={(e) => setNewVenueLocation(e.target.value)} placeholder="Luogo (es. Trento)..." className="flex-1 bg-black/40 border border-white/5 rounded-2xl px-5 py-3 text-xs text-white uppercase font-bold" />
+                      <button onClick={addVenue} className="bg-emerald-500 text-black font-black px-5 rounded-2xl text-[10px]">+</button>
+                    </div>
                   </div>
                   <div className="max-h-40 overflow-y-auto custom-scrollbar space-y-2">
                     {masterVenues.map(vn => (
                       <div key={vn.venue_id} className="flex justify-between items-center bg-white/5 p-3 rounded-xl border border-white/5">
-                        <span className="text-[11px] font-bold text-white/70 uppercase">{vn.venue_name}</span>
+                        <div className="flex flex-col">
+                          <span className="text-[11px] font-bold text-white uppercase leading-none">{vn.venue_name}</span>
+                          <span className="text-[8px] font-black text-emerald-400 uppercase tracking-widest mt-1 italic">{vn.venue_location}</span>
+                        </div>
                         <button onClick={() => setMasterVenues(masterVenues.filter(v => v.venue_id !== vn.venue_id))} className="text-rose-500/50 hover:text-rose-500 text-[10px] font-black uppercase">Elimina</button>
                       </div>
                     ))}
@@ -294,10 +377,39 @@ const App: React.FC = () => {
                 </div>
               )}
 
+              {/* Protocollo Backup Advisory */}
+              <div className="mb-8 p-5 rounded-3xl bg-amber-500/5 border border-amber-500/10 backdrop-blur-md relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                   <svg className="w-12 h-12 text-amber-500 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                </div>
+                <div className="flex items-start gap-4">
+                  <div className="bg-amber-500/20 p-2.5 rounded-xl border border-amber-500/30">
+                    <svg className="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  </div>
+                  <div>
+                    <h4 className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-1.5 italic">Protocollo Sicurezza Dati</h4>
+                    <p className="text-[10px] text-white/50 leading-relaxed font-medium">
+                      Ricorda di eseguire periodicamente il <span className="text-white font-bold">Backup</span>. In caso di reset, potrai ripristinare tramite <span className="text-amber-500 font-bold uppercase italic">Import</span>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-4 mb-8">
-                <button onClick={() => setAppState(AppState.VIEWING_ADVANCED_LOGS)} className="py-8 rounded-[2rem] bg-amber-500/10 border border-amber-500/20 text-amber-500 flex flex-col items-center gap-3 transition-all active:scale-95 active:bg-amber-500 active:text-black">
+                <button onClick={() => setAppState(AppState.VIEWING_OPERATOR_STATS)} className="py-8 rounded-[2rem] bg-amber-500/10 border border-amber-500/20 text-amber-500 flex flex-col items-center gap-3 transition-all active:scale-95 active:bg-amber-500 active:text-black">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                  <span className="text-[10px] font-black uppercase tracking-widest italic">Statistiche Agenti</span>
+                </button>
+                <button onClick={() => setAppState(AppState.VIEWING_VENUE_STATS)} className="py-8 rounded-[2rem] bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 flex flex-col items-center gap-3 transition-all active:scale-95 active:bg-emerald-500 active:text-black">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+                  <span className="text-[10px] font-black uppercase tracking-widest italic">Statistiche Locali</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mb-8">
+                <button onClick={() => setAppState(AppState.VIEWING_ADVANCED_LOGS)} className="py-8 rounded-[2rem] bg-zinc-800/50 border border-white/10 text-white/40 flex flex-col items-center gap-3 transition-all active:scale-95 active:bg-amber-500 active:text-black">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                  <span className="text-[10px] font-black uppercase tracking-widest italic">Statistiche</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest italic">Esporta Log</span>
                 </button>
                 <button onClick={() => setAppState(AppState.VIEWING_SENT_BATCHES)} className="py-8 rounded-[2rem] bg-white/5 border border-white/5 text-slate-400 flex flex-col items-center gap-3 transition-all active:bg-emerald-500 active:text-black">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
@@ -307,12 +419,20 @@ const App: React.FC = () => {
 
               <button onClick={() => {
                 setBatch({ batch_id: `PROT-${Date.now()}`, created_at: new Date().toISOString(), services: [] });
-                setCurrentService({ id: 1, venue_name: '', location: '', service_date: '', start_time: '', end_time: '', notes: '', operators: [], double_shift: false });
+                setCurrentService({ id: 1, service_uuid: `SRV-${Date.now()}`, venue_name: '', location: '', service_date: '', start_time: '', end_time: '', notes: '', operators: [], double_shift: false });
                 setAppState(AppState.CREATING_SERVICE);
                 setError(null);
               }} className="w-full py-7 bg-emerald-500 text-white font-black rounded-[2.5rem] text-sm uppercase tracking-[0.4em] shadow-[0_20px_40px_rgba(16,185,129,0.5)] transition-all active:scale-95 flex items-center justify-center gap-4">
                 <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth={3} d="M12 4v16m8-8H4" /></svg>
                 Compila Report
+              </button>
+
+              <button 
+                onClick={() => setShowUtility(true)} 
+                className="w-full mt-4 py-7 bg-amber-400 text-black font-black rounded-[2.5rem] text-sm uppercase tracking-[0.4em] shadow-[0_20px_40px_rgba(245,158,11,0.3)] transition-all active:scale-95 flex items-center justify-center gap-4 border border-amber-500/30"
+              >
+                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                Utility e Modifiche
               </button>
             </div>
           </div>
@@ -335,7 +455,7 @@ const App: React.FC = () => {
                 setError("Selezionare un Locale e almeno un Operatore."); return;
               }
               setBatch(prev => ({ ...prev, services: [...prev.services, currentService] }));
-              setCurrentService(p => ({ ...p, id: p.id + 1, venue_name: '', operators: [], notes: '', service_date: p.service_date, start_time: p.start_time, end_time: p.end_time }));
+              setCurrentService(p => ({ ...p, id: p.id + 1, service_uuid: `SRV-${Date.now()}`, venue_name: '', location: '', operators: [], notes: '', service_date: p.service_date, start_time: p.start_time, end_time: p.end_time }));
               setError(null);
             }}
             onTerminate={() => {
@@ -359,7 +479,11 @@ const App: React.FC = () => {
         )}
         
         {appState === AppState.SENT && (
-          <PayloadDisplay batch={batch} onReset={handleGoHome} />
+          <PayloadDisplay 
+            batch={batch} 
+            onReset={handleGoHome} 
+            onOpenUtility={() => setShowUtility(true)}
+          />
         )}
         
         {appState === AppState.VIEWING_SENT_BATCHES && (
@@ -369,11 +493,29 @@ const App: React.FC = () => {
         {appState === AppState.VIEWING_ADVANCED_LOGS && (
           <AdvancedLogsView history={sentBatches} onBack={handleGoHome} />
         )}
+
+        {appState === AppState.VIEWING_OPERATOR_STATS && (
+          <OperatorStatsView history={sentBatches} onBack={handleGoHome} />
+        )}
+
+        {appState === AppState.VIEWING_VENUE_STATS && (
+          <VenueStatsView history={sentBatches} onBack={handleGoHome} />
+        )}
       </main>
 
       <footer className="mt-auto py-8 text-[9px] text-white/20 font-mono text-center uppercase tracking-[0.5em] opacity-40">
         ALFA SECURITY SYSTEMS • STAZIONE OPERATIVA V7.5
       </footer>
+
+      <UtilityModal 
+        isOpen={showUtility}
+        onClose={() => setShowUtility(false)}
+        services={last8Services}
+        onUpdateService={handleUpdateServiceInHistory}
+        masterVenues={masterVenues}
+        masterOperators={masterOperators}
+        onDownloadLog={handleDownloadLog}
+      />
     </div>
   );
 };

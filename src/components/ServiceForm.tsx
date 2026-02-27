@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { ServiceEntry, Operator, Venue } from '../types';
 
 interface ServiceFormProps {
@@ -16,22 +16,32 @@ interface ServiceFormProps {
 const ServiceForm: React.FC<ServiceFormProps> = ({
   service, setService, availableOperators, masterVenues, onToggleOperator, onNewService, onTerminate, error
 }) => {
-  const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const opId = e.target.value;
-    if (!opId) return;
-    const selectedOp = availableOperators.find(o => o.operator_id === opId);
-    if (selectedOp) {
-      onToggleOperator(selectedOp);
-    }
-    e.target.value = "";
-  };
+  const [opSearch, setOpSearch] = useState("");
+
+  const filteredAvailable = useMemo(() => {
+    if (!opSearch.trim()) return availableOperators;
+    return availableOperators.filter(op => 
+      op.operator_name.toLowerCase().includes(opSearch.toLowerCase())
+    );
+  }, [availableOperators, opSearch]);
 
   const handleVenueChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setService({...service, venue_name: e.target.value});
+    const venueName = e.target.value;
+    const selectedVenue = masterVenues.find(v => v.venue_name === venueName);
+    setService({
+      ...service, 
+      venue_name: venueName,
+      location: selectedVenue ? selectedVenue.venue_location : ''
+    });
+  };
+
+  const selectOp = (op: Operator) => {
+    onToggleOperator(op);
+    setOpSearch("");
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in zoom-in duration-700">
+    <div className="space-y-6 animate-in fade-in zoom-in duration-700 pb-20">
       <div className="relative backdrop-blur-3xl bg-white/5 p-8 rounded-[3rem] border border-white/10 shadow-[0_35px_70px_rgba(0,0,0,0.7)] border-t-white/10">
         <div className="flex justify-between items-center mb-10 border-b border-white/5 pb-6">
           <h2 className="text-2xl font-black text-white italic uppercase tracking-tighter flex items-center gap-4">
@@ -56,10 +66,11 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
             >
               <option value="" disabled>SELEZIONA LOCALE...</option>
               {masterVenues.map(v => (
-                <option key={v.venue_id} value={v.venue_name} className="bg-zinc-900 text-white uppercase font-bold">{v.venue_name}</option>
+                <option key={v.venue_id} value={v.venue_name} className="bg-zinc-900 text-white uppercase font-bold">{v.venue_name} ({v.venue_location})</option>
               ))}
             </select>
           </div>
+          
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-[10px] font-black text-white/30 uppercase tracking-[0.4em] ml-2">Data Servizio</label>
@@ -76,6 +87,16 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
               </div>
             </div>
           </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-white/30 uppercase tracking-[0.4em] ml-2">Note Operative</label>
+            <textarea 
+              className="w-full bg-black/40 border border-white/5 rounded-2xl px-6 py-4 text-sm text-white focus:outline-none focus:border-emerald-500/50 transition-all shadow-inner h-24 placeholder:text-white/10 uppercase font-bold italic"
+              placeholder="Inserire note specifiche, turni particolari o criticità..."
+              value={service.notes}
+              onChange={(e) => setService({...service, notes: e.target.value})}
+            />
+          </div>
         </div>
 
         <div className="mt-8 pt-8 border-t border-white/5">
@@ -86,34 +107,46 @@ const ServiceForm: React.FC<ServiceFormProps> = ({
             </button>
           </div>
 
-          <div className="mb-6">
-            <select 
-              className="w-full bg-black/60 border border-white/10 rounded-2xl px-6 py-5 text-sm text-amber-500 font-bold focus:outline-none focus:border-emerald-500/50 transition-all shadow-xl appearance-none"
-              onChange={handleSelectChange}
-              defaultValue=""
-            >
-              <option value="" disabled>SELEZIONA AGENTE DALLA LISTA...</option>
-              {availableOperators.map(op => (
-                <option key={op.operator_id} value={op.operator_id} className="bg-zinc-900 text-white font-bold py-2">
-                  {op.operator_name.toUpperCase()}
-                </option>
-              ))}
-            </select>
+          <div className="mb-6 relative">
+            <input 
+              type="text"
+              placeholder="DIGITA PER CERCARE NOMINATIVO..."
+              className="w-full bg-black/60 border border-white/10 rounded-2xl px-6 py-5 text-sm text-amber-500 font-bold focus:outline-none focus:border-emerald-500/50 transition-all shadow-xl placeholder:text-white/10 placeholder:uppercase"
+              value={opSearch}
+              onChange={(e) => setOpSearch(e.target.value)}
+            />
+            {opSearch.trim() && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-[#0a0a0a] border border-white/10 rounded-3xl shadow-2xl z-50 max-h-60 overflow-y-auto custom-scrollbar overflow-hidden animate-in slide-in-from-top-2 duration-200">
+                {filteredAvailable.length > 0 ? (
+                  filteredAvailable.map(op => (
+                    <button 
+                      key={op.operator_id}
+                      onClick={() => selectOp(op)}
+                      className="w-full text-left px-6 py-4 text-xs font-black text-white/70 uppercase hover:bg-emerald-500 hover:text-black transition-colors border-b border-white/5"
+                    >
+                      {op.operator_name}
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-6 py-4 text-[9px] text-white/20 italic uppercase font-bold">Nessun risultato trovato</div>
+                )}
+              </div>
+            )}
           </div>
           
-          <div className="flex flex-wrap gap-2.5 mb-2 min-h-[44px]">
+          <div className="flex flex-wrap gap-3 mb-2 min-h-[44px]">
             {service.operators.map(op => (
               <div 
                 key={op.operator_id} 
-                className="bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 px-4 py-2.5 rounded-xl text-[10px] font-black flex items-center gap-3 active:scale-95 transition-all shadow-lg cursor-pointer uppercase tracking-tight"
+                className="bg-emerald-500 text-black px-4 py-2.5 rounded-xl text-[10px] font-black flex items-center gap-3 active:scale-95 transition-all shadow-[0_0_20px_rgba(16,185,129,0.4)] cursor-pointer uppercase tracking-tight border border-emerald-400"
                 onClick={() => onToggleOperator(op)}
               >
-                {op.operator_name} <span className="text-white/40 text-[12px] font-normal">×</span>
+                {op.operator_name} <span className="text-black/40 text-[12px] font-normal">×</span>
               </div>
             ))}
             {service.operators.length === 0 && (
-              <div className="w-full py-4 border-2 border-dashed border-white/5 rounded-2xl flex items-center justify-center">
-                <span className="text-[10px] text-white/10 font-black uppercase tracking-[0.2em]">Nessuna unità assegnata</span>
+              <div className="w-full py-6 border-2 border-dashed border-white/5 rounded-2xl flex items-center justify-center bg-white/[0.02]">
+                <span className="text-[10px] text-white/10 font-black uppercase tracking-[0.2em]">Pianifica Unità Operative</span>
               </div>
             )}
           </div>

@@ -7,10 +7,12 @@ export interface Operator {
 export interface Venue {
   venue_id: string;
   venue_name: string;
+  venue_location: string;
 }
 
 export interface ServiceEntry {
   id: number;
+  service_uuid?: string;
   venue_name: string;
   location: string;
   service_date: string;
