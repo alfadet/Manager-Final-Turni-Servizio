@@ -20,40 +20,64 @@ import OperatorStatsView from './components/OperatorStatsView';
 import VenueStatsView from './components/VenueStatsView';
 import UtilityModal from './components/UtilityModal';
 
-const DB_KEY_OPS = 'ALFA_DB_OPERATORS_V7';
-const DB_KEY_VENUES = 'ALFA_DB_VENUES_V7';
-const DB_KEY_HISTORY = 'ALFA_DB_HISTORY_V7';
 const INSTALL_KEY = 'ALFA_INSTALL_SHOWN';
 
 const App: React.FC = () => {
-  const [masterOperators, setMasterOperators] = useState<Operator[]>(() => {
-    try {
-      const saved = localStorage.getItem(DB_KEY_OPS);
-      return saved ? JSON.parse(saved) : DEFAULT_OPERATORS;
-    } catch { return DEFAULT_OPERATORS; }
-  });
+  const [masterOperators, setMasterOperators] = useState<Operator[]>([]);
+  const [masterVenues, setMasterVenues] = useState<Venue[]>([]);
+  const [sentBatches, setSentBatches] = useState<Batch[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const [masterVenues, setMasterVenues] = useState<Venue[]>(() => {
-    try {
-      const saved = localStorage.getItem(DB_KEY_VENUES);
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
-  });
+  // Carica tutti i dati dal database all'avvio
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [opsRes, venuesRes, batchesRes] = await Promise.all([
+          fetch('/api/operators'),
+          fetch('/api/venues'),
+          fetch('/api/batches'),
+        ]);
 
-  const [sentBatches, setSentBatches] = useState<Batch[]>(() => {
-    try {
-      const saved = localStorage.getItem(DB_KEY_HISTORY);
-      const parsed: Batch[] = saved ? JSON.parse(saved) : [];
-      // Migrazione: Assicura che ogni servizio abbia un service_uuid
-      return parsed.map(batch => ({
-        ...batch,
-        services: batch.services.map(s => ({
-          ...s,
-          service_uuid: s.service_uuid || `SRV-MIG-${s.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-        }))
-      }));
-    } catch { return []; }
-  });
+        if (opsRes.ok) {
+          const ops: Operator[] = await opsRes.json();
+          if (ops.length === 0) {
+            // Prima installazione: carica operatori di default nel DB
+            setMasterOperators(DEFAULT_OPERATORS);
+            for (const op of DEFAULT_OPERATORS) {
+              await fetch('/api/operators', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(op),
+              });
+            }
+          } else {
+            setMasterOperators(ops);
+          }
+        }
+
+        if (venuesRes.ok) {
+          const venues: Venue[] = await venuesRes.json();
+          setMasterVenues(venues);
+        }
+
+        if (batchesRes.ok) {
+          const batches: Batch[] = await batchesRes.json();
+          setSentBatches(batches.map(batch => ({
+            ...batch,
+            services: batch.services.map(s => ({
+              ...s,
+              service_uuid: s.service_uuid || `SRV-MIG-${s.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            })),
+          })));
+        }
+      } catch (err) {
+        console.error('API non disponibile:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadData();
+  }, []);
 
   const [showInstallOverlay, setShowInstallOverlay] = useState(false);
 
@@ -74,17 +98,6 @@ const App: React.FC = () => {
     setShowInstallOverlay(false);
   };
 
-  useEffect(() => {
-    localStorage.setItem(DB_KEY_OPS, JSON.stringify(masterOperators));
-  }, [masterOperators]);
-
-  useEffect(() => {
-    localStorage.setItem(DB_KEY_VENUES, JSON.stringify(masterVenues));
-  }, [masterVenues]);
-
-  useEffect(() => {
-    localStorage.setItem(DB_KEY_HISTORY, JSON.stringify(sentBatches));
-  }, [sentBatches]);
 
   const [appState, setAppState] = useState<AppState>(AppState.IDLE);
   const [showOpManager, setShowOpManager] = useState(false);
@@ -145,12 +158,31 @@ const App: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const data = JSON.parse(event.target?.result as string);
-        if (data.masterOperators) setMasterOperators(data.masterOperators);
-        if (data.masterVenues) setMasterVenues(data.masterVenues);
-        if (data.sentBatches) setSentBatches(data.sentBatches);
+
+        if (data.masterOperators) {
+          setMasterOperators(data.masterOperators);
+          await fetch('/api/operators/all', { method: 'DELETE' }).catch(console.error);
+          for (const op of data.masterOperators) {
+            await fetch('/api/operators', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(op) });
+          }
+        }
+        if (data.masterVenues) {
+          setMasterVenues(data.masterVenues);
+          await fetch('/api/venues/all', { method: 'DELETE' }).catch(console.error);
+          for (const venue of data.masterVenues) {
+            await fetch('/api/venues', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(venue) });
+          }
+        }
+        if (data.sentBatches) {
+          setSentBatches(data.sentBatches);
+          await fetch('/api/batches', { method: 'DELETE' }).catch(console.error);
+          for (const batch of data.sentBatches) {
+            await fetch('/api/batches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(batch) });
+          }
+        }
         alert("Database Platinum ripristinato con successo!");
       } catch {
         alert("Errore: Il file di backup non è valido.");
@@ -159,21 +191,37 @@ const App: React.FC = () => {
     reader.readAsText(file);
   };
 
-  const addOperator = () => {
+  const addOperator = async () => {
     if (!newOpName.trim()) return;
-    setMasterOperators([...masterOperators, { operator_id: `AG-${Date.now()}`, operator_name: newOpName.trim() }]);
+    const newOp: Operator = { operator_id: `AG-${Date.now()}`, operator_name: newOpName.trim() };
+    setMasterOperators([...masterOperators, newOp]);
     setNewOpName("");
+    try {
+      await fetch('/api/operators', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newOp),
+      });
+    } catch (err) { console.error('Errore salvataggio operatore:', err); }
   };
 
-  const addVenue = () => {
+  const addVenue = async () => {
     if (!newVenueName.trim() || !newVenueLocation.trim()) return;
-    setMasterVenues([...masterVenues, { 
-      venue_id: `VN-${Date.now()}`, 
-      venue_name: newVenueName.trim(), 
-      venue_location: newVenueLocation.trim() 
-    }]);
+    const newVenue: Venue = {
+      venue_id: `VN-${Date.now()}`,
+      venue_name: newVenueName.trim(),
+      venue_location: newVenueLocation.trim(),
+    };
+    setMasterVenues([...masterVenues, newVenue]);
     setNewVenueName("");
     setNewVenueLocation("");
+    try {
+      await fetch('/api/venues', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newVenue),
+      });
+    } catch (err) { console.error('Errore salvataggio locale:', err); }
   };
 
   const handleGoHome = () => {
@@ -209,10 +257,21 @@ const App: React.FC = () => {
   }, [sentBatches]);
 
   const handleUpdateServiceInHistory = (updatedService: ServiceEntry) => {
-    setSentBatches(prev => prev.map(batch => ({
-      ...batch,
-      services: batch.services.map(s => s.service_uuid === updatedService.service_uuid ? updatedService : s)
-    })));
+    setSentBatches(prev => {
+      const newBatches = prev.map(b => ({
+        ...b,
+        services: b.services.map(s => s.service_uuid === updatedService.service_uuid ? updatedService : s),
+      }));
+      const updatedBatch = newBatches.find(b => b.services.some(s => s.service_uuid === updatedService.service_uuid));
+      if (updatedBatch) {
+        fetch(`/api/batches/${updatedBatch.batch_id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ services: updatedBatch.services }),
+        }).catch(console.error);
+      }
+      return newBatches;
+    });
   };
 
   const handleDownloadLog = (specificService?: ServiceEntry) => {
@@ -238,6 +297,17 @@ const App: React.FC = () => {
     link.download = `LOG_ALFA_SECURITY_${new Date().getTime()}.txt`;
     link.click();
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-[100dvh] bg-[#020202] text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-[11px] font-black uppercase tracking-widest text-white/40">Connessione al database...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[100dvh] bg-[#020202] text-white selection:bg-emerald-500/40 flex flex-col items-center p-4 overflow-x-hidden font-sans antialiased overflow-y-auto custom-scrollbar relative">
@@ -347,7 +417,7 @@ const App: React.FC = () => {
                     {masterOperators.map(op => (
                       <div key={op.operator_id} className="flex justify-between items-center bg-white/5 p-3 rounded-xl border border-white/5">
                         <span className="text-[11px] font-bold text-white/70 uppercase">{op.operator_name}</span>
-                        <button onClick={() => setMasterOperators(masterOperators.filter(o => o.operator_id !== op.operator_id))} className="text-rose-500/50 hover:text-rose-500 text-[10px] font-black uppercase">Elimina</button>
+                        <button onClick={() => { setMasterOperators(masterOperators.filter(o => o.operator_id !== op.operator_id)); fetch(`/api/operators/${op.operator_id}`, { method: 'DELETE' }).catch(console.error); }} className="text-rose-500/50 hover:text-rose-500 text-[10px] font-black uppercase">Elimina</button>
                       </div>
                     ))}
                   </div>
@@ -370,7 +440,7 @@ const App: React.FC = () => {
                           <span className="text-[11px] font-bold text-white uppercase leading-none">{vn.venue_name}</span>
                           <span className="text-[8px] font-black text-emerald-400 uppercase tracking-widest mt-1 italic">{vn.venue_location}</span>
                         </div>
-                        <button onClick={() => setMasterVenues(masterVenues.filter(v => v.venue_id !== vn.venue_id))} className="text-rose-500/50 hover:text-rose-500 text-[10px] font-black uppercase">Elimina</button>
+                        <button onClick={() => { setMasterVenues(masterVenues.filter(v => v.venue_id !== vn.venue_id)); fetch(`/api/venues/${vn.venue_id}`, { method: 'DELETE' }).catch(console.error); }} className="text-rose-500/50 hover:text-rose-500 text-[10px] font-black uppercase">Elimina</button>
                       </div>
                     ))}
                   </div>
@@ -470,10 +540,17 @@ const App: React.FC = () => {
         )}
 
         {appState === AppState.TERMINATED && (
-          <SummaryView batch={batch} isSyncing={isSyncing} onConfirm={() => {
+          <SummaryView batch={batch} isSyncing={isSyncing} onConfirm={async () => {
             const finalBatch = batch;
             setSentBatches(prev => [finalBatch, ...prev]);
             syncToCloud(finalBatch);
+            try {
+              await fetch('/api/batches', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(finalBatch),
+              });
+            } catch (err) { console.error('Errore salvataggio batch:', err); }
             setAppState(AppState.SENT);
           }} onCancel={() => setAppState(AppState.CREATING_SERVICE)} />
         )}
@@ -487,7 +564,7 @@ const App: React.FC = () => {
         )}
         
         {appState === AppState.VIEWING_SENT_BATCHES && (
-          <SentHistory history={sentBatches} onBack={handleGoHome} onClear={() => { if(confirm('Svuotare archivio?')) setSentBatches([]); }} />
+          <SentHistory history={sentBatches} onBack={handleGoHome} onClear={() => { if(confirm('Svuotare archivio?')) { setSentBatches([]); fetch('/api/batches', { method: 'DELETE' }).catch(console.error); } }} />
         )}
 
         {appState === AppState.VIEWING_ADVANCED_LOGS && (
