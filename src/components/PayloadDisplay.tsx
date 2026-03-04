@@ -100,12 +100,20 @@ NOTE: ${s.notes ? s.notes.toUpperCase() : 'NESSUNA SPECIFICA RILEVATA'}
     `📍 SITO: ${s.venue_name} (${s.location})\n📅 DATA: ${s.service_date}\n⏰ ORARIO: ${s.start_time}-${s.end_time}\n👥 STAFF: ${s.operators.map(o => o.operator_name.toUpperCase()).join(', ')}${s.notes ? `\n📝 NOTE: ${s.notes.toUpperCase()}` : ''}`
   ).join('\n\n')}`;
 
+  const openMailto = (recipient: string, subject: string, body: string) => {
+    const link = document.createElement('a');
+    link.href = `mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const copyAndEmail = () => {
     playWhooshSound();
     const body = generateSummaryText();
     navigator.clipboard.writeText(body);
     const subject = `REPORT ALFA SECURITY - ${new Date().toLocaleDateString('it-IT')}`;
-    window.location.href = `mailto:${EMAIL_RECIPIENT}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    openMailto(EMAIL_RECIPIENT, subject, body);
   };
 
   const sendToQuestura = () => {
@@ -113,7 +121,7 @@ NOTE: ${s.notes ? s.notes.toUpperCase() : 'NESSUNA SPECIFICA RILEVATA'}
     const body = generateSummaryText();
     navigator.clipboard.writeText(body);
     const subject = `COMUNICAZIONE SERVIZI - ALFA SECURITY - ${new Date().toLocaleDateString('it-IT')}`;
-    window.location.href = `mailto:${QUESTURA_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    openMailto(QUESTURA_EMAIL, subject, body);
   };
 
   const launchWA = () => {
