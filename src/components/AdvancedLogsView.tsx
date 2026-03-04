@@ -76,7 +76,7 @@ const AdvancedLogsView: React.FC<AdvancedLogsViewProps> = ({ history, onBack }) 
 
   const exportEmail = () => {
     const subject = `LOG AVANZATI ALFA SECURITY - ${filterMonth}/${filterYear}`;
-    window.location.href = `mailto:${EMAIL_RECIPIENT}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(reportTxt)}`;
+    window.open(`mailto:${EMAIL_RECIPIENT}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(reportTxt)}`, '_blank');
   };
 
   const exportWA = () => {

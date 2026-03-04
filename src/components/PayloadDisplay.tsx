@@ -111,7 +111,7 @@ NOTE: ${s.notes ? s.notes.toUpperCase() : 'NESSUNA SPECIFICA RILEVATA'}
   const copyAndEmail = () => {
     playWhooshSound();
     const body = generateSummaryText();
-    navigator.clipboard.writeText(body);
+    try { navigator.clipboard.writeText(body); } catch (e) {}
     const subject = `REPORT ALFA SECURITY - ${new Date().toLocaleDateString('it-IT')}`;
     openMailto(EMAIL_RECIPIENT, subject, body);
   };
@@ -119,7 +119,7 @@ NOTE: ${s.notes ? s.notes.toUpperCase() : 'NESSUNA SPECIFICA RILEVATA'}
   const sendToQuestura = () => {
     playWhooshSound();
     const body = generateSummaryText();
-    navigator.clipboard.writeText(body);
+    try { navigator.clipboard.writeText(body); } catch (e) {}
     const subject = `COMUNICAZIONE SERVIZI - ALFA SECURITY - ${new Date().toLocaleDateString('it-IT')}`;
     openMailto(QUESTURA_EMAIL, subject, body);
   };

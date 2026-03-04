@@ -50,7 +50,7 @@ export default function VenueStatsView({ history, onBack }: VenueStatsViewProps)
   const exportEmail = (data: VenueStat) => {
     const body = generateReportText(data);
     const subject = `REPORT ALFA SECURITY - LOCALE: ${data.venueName.toUpperCase()}`;
-    window.location.href = `mailto:${EMAIL_RECIPIENT}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.open(`mailto:${EMAIL_RECIPIENT}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank');
   };
 
   const exportWA = (data: VenueStat) => {
